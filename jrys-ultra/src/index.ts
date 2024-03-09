@@ -14,25 +14,27 @@ export interface Config { }
 export interface Config {
   font: string,
   url: string,
-  blurs: number
+  blurs: number,
+  color: string,
 }
 
 export const Config: Schema<Config> = Schema.object({
   font: Schema.string().default('YouYuan').description('字体设置(使用系统自带字体，填写系统自带字体的[英文名](https://www.cnblogs.com/chendc/p/9298832.html)，只研究了win系统)'),
   url: Schema.string().required().description('图片或随机图链接'),
   blurs: Schema.number().role('slider').min(0).max(100).step(1).default(60).description('透明度'),
+  color: Schema.string().required().role('color').description('模糊框背景色'),
 })
 
 export const usage = `
 # koishi-plugin-jrys-ultra
-# 运势文案借(chao)鉴(xi)了[jryspro](https://github.com/Twiyin0/koishi-plugin-jryspro/tree/main),感谢大佬
+# 运势文案和算法借(chao)鉴(xi)了[jryspro](https://github.com/Twiyin0/koishi-plugin-jryspro/tree/main),感谢大佬
 `
 
 export function apply(ctx: Context, config: Config) {
   const fonts = config.font
   const blur = config.blurs
   const url = config.url
-
+  const color = config.color
   const log1 = "jrys-ultra"
   const logger: Logger = new Logger(log1)
   const random = new Random(() => Math.random())
@@ -44,7 +46,7 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  async function getImageSizeAndLog(imageUrl: string, num: number) {
+  async function getImageSizeAndLog(imageUrl: string, num: number, color: string, blurs: number) {
     try {
       // 使用 ctx.canvas.loadImage 加载网络图像
       const image = await ctx.canvas.loadImage(imageUrl);
@@ -78,7 +80,7 @@ export function apply(ctx: Context, config: Config) {
       if (type) {
         //竖屏
         size_type.rw = (width / 15) * 14;
-        size_type.rh = height / 4;
+        size_type.rh = height / 3.8;
         size_type.rx = (width / 30) // 矩形的 x 坐标
         size_type.ry = (height / 8) * 5.8 // 矩形的 y 坐标
       } else {
@@ -107,8 +109,8 @@ export function apply(ctx: Context, config: Config) {
       ctximg.closePath();
       ctximg.clip(); // 应用剪辑路径
 
-      ctximg.filter = `blur(${blur}px)`;
-      ctximg.fillStyle = "rgba(180, 180, 180, 0.30)";
+      ctximg.filter = `blur(${blurs}px)`;
+      ctximg.fillStyle = color;
       ctximg.drawImage(image, 0, 0, width, height);
       ctximg.fill();
       ctximg.shadowColor = 'transparent'; // 移除阴影
@@ -125,13 +127,13 @@ export function apply(ctx: Context, config: Config) {
 
         if (type) {
           let x = width / 2
-          let y = (height / 6) * 4.6
+          let y = (height / 6) * 4.55
           ctximg.textAlign = 'center';  // 水平居中
           const fontSize = width / 25
           ctximg.font = `bold ${fontSize}px ${fonts}`;
           ctximg.fillStyle = '#000000';
           ctximg.fillText(lev, x, y);
-          y += width / 20
+          y += width / 25
           ctximg.fillText(star, x, y);
         } else {
           let x = width / 7
@@ -155,14 +157,14 @@ export function apply(ctx: Context, config: Config) {
 
           //横
           ctximg.beginPath();
-          ctximg.moveTo((width / 15) * 1.25, (height / 6) * 4.9);
-          ctximg.lineTo((width / 15) * 13.75, (height / 6) * 4.9);
+          ctximg.moveTo((width / 15) * 1.25, (height / 6) * 4.85);
+          ctximg.lineTo((width / 15) * 13.75, (height / 6) * 4.85);
           ctximg.stroke();
 
           ctximg.font = `bold ${fontSize * 1.05}px ${fonts}`;
           ctximg.fillStyle = '#000000';
           ctximg.textAlign = 'center';
-          ctximg.fillText(text1, width / 2, y * 0.95);
+          ctximg.fillText(text1, width / 2, y * 0.96);
 
           ctximg.font = `bold ${fontSize}px ${fonts}`;
           ctximg.textAlign = 'left';
@@ -179,7 +181,7 @@ export function apply(ctx: Context, config: Config) {
           ctximg.font = `bold ${fontSize * 0.5}px ${fonts}`;
           ctximg.fillStyle = '#000000';
           ctximg.textAlign = 'center';
-          ctximg.fillText('仅供娱乐|相信科学|请勿迷信', width / 2, height * 0.96)
+          ctximg.fillText('仅供娱乐|相信科学|请勿迷信', width / 2, height * 0.97)
 
         } else {
           let x1 = width / 4.3
@@ -213,12 +215,10 @@ export function apply(ctx: Context, config: Config) {
               y = height / 4
             }
           }
-
           ctximg.font = `bold ${fontSize * 0.5}px ${fonts}`;
           ctximg.fillStyle = '#000000';
           ctximg.textAlign = 'center';
           ctximg.fillText('仅供娱乐|相信科学|请勿迷信', width / 7, height * 0.97)
-
         }
       }
 
@@ -233,9 +233,61 @@ export function apply(ctx: Context, config: Config) {
   }
 
 
-  ctx.command('jrysultra')
+  ctx.command('jrysultra [red] [green] [blue] [alpha] [blurs]', '输出今日运势图片')
     .alias('今日运势')
-    .action(async ({ session }) => {
+    .usage('可传入文字框的颜色和透明度(透明度最高100)')
+    .example('jrysultra 102 204 255 0.6 40  【rgba的四个值和模糊度】')
+    .option('text', '-t 文字输出')
+    .action(async ({ options, session }, red, green, blue, alpha, blurs) => {
+      if (options.text) {
+        let text = getyunshi_text(getJrys(session))
+        try {
+          session.send(h.image(url))
+        } catch (error) {
+          logger.info(error)
+        }
+        return (`
+你的今日运势为：
+⚫${text.jrys.fortuneSummary}
+⚪${text.jrys.luckyStar}
+⚫${text.jrys.signText}
+⚪${text.jrys.unsignText}
+        `)
+      }
+      var colors: string = color
+      var blurss: number = blur
+      function Data_review(red, green, blue, alpha, blurs) {
+        red = parseInt(red);
+        green = parseInt(green);
+        blue = parseInt(blue);
+        alpha = parseFloat(alpha);
+        blurs = parseInt(blurs);
+        if (typeof red == 'number' && red >= 0 && red <= 255 &&
+          typeof green == 'number' && green >= 0 && green <= 255 &&
+          typeof blue == 'number' && blue >= 0 && blue <= 255) {
+          if (typeof alpha === 'number' && alpha >= 0 && alpha <= 1) {
+            colors = `rgba(${red},${green},${blue},${alpha})`
+            if (typeof blurs === 'number' && blurs >= 0 && blurs <= 100) {
+              blurss = blurs
+            } else {
+              blurss = blur
+            }
+            return [colors, blurss]
+          } else {
+            colors = `rgba(${red},${green},${blue},0.5)`
+            if (typeof blurs === 'number' && blurs >= 0 && blurs <= 100) {
+              blurss = blurs
+            } else {
+              blurss = blur
+            }
+            return [colors, blurss]
+          }
+        } else {
+          colors = color
+          blurss = blur
+          return [colors, blurss]
+        }
+      }
 
       function getJrys(session) {
         const md5 = crypto.createHash('md5');
@@ -260,18 +312,25 @@ export function apply(ctx: Context, config: Config) {
             userId = parseInt(hexDigest, 16) % 1000000001;
           }
         }
-        // 生成今日运势的索引
         // 这个索引是根据当前日期的零点时间戳（秒）和用户 ID 的和乘以一个常数，然后对运势数组的长度加一取模得到的
         var todayJrys = ((etime / 1000 + userId) * 2333) % (jrysJson.length + 1);
         // 返回对应索引的运势
         return Number(todayJrys);
       }
       console.log(getJrys(session))
-      try {
-        const imgBuffer = await getImageSizeAndLog(url, getJrys(session) );
-        return h.image(imgBuffer, 'image/jpg')
-      } catch {
-        return '呜呜呜，图片渲染出错了＞﹏＜'
+      const art = Data_review(red, green, blue, alpha, blurs)
+
+      for (let i = 1; i < 4; i++) {
+        try {
+          const imgBuffer = await getImageSizeAndLog(url, getJrys(session), art[0].toString(), Number(art[1]));
+          return h.image(imgBuffer, 'image/jpg')
+        } catch {
+          logger.info('渲染出错，进行第' + i + '次重试')
+          if (i == 3) {
+            logger.info('尝试' + i + '次后依旧出错')
+            return '呜呜呜，图片渲染出错了＞﹏＜'
+          }
+        }
       }
     });
 }
