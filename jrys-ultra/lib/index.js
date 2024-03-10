@@ -301,6 +301,7 @@ function apply(ctx, config) {
             }
             // 这个索引是根据当前日期的零点时间戳（秒）和用户 ID 的和乘以一个常数，然后对运势数组的长度加一取模得到的
             var todayJrys = ((etime / 1000 + userId) * 2333) % (jrys_1.jrysJson.length + 1);
+            todayJrys = todayJrys % 80;
             // 返回对应索引的运势
             return Number(todayJrys);
         }

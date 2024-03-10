@@ -221,8 +221,6 @@ export function apply(ctx: Context, config: Config) {
           ctximg.fillText('仅供娱乐|相信科学|请勿迷信', width / 7, height * 0.97)
         }
       }
-
-
       text_lay(text1, text2, type)
       text_lev(lev, star, type)
       const buffers = canvass.toBuffer('image/png');
@@ -314,6 +312,7 @@ export function apply(ctx: Context, config: Config) {
         }
         // 这个索引是根据当前日期的零点时间戳（秒）和用户 ID 的和乘以一个常数，然后对运势数组的长度加一取模得到的
         var todayJrys = ((etime / 1000 + userId) * 2333) % (jrysJson.length + 1);
+        todayJrys = todayJrys % 80;
         // 返回对应索引的运势
         return Number(todayJrys);
       }
