@@ -162,7 +162,6 @@ export async function apply(ctx: Context, config: Config) {
       "😺😺😺",
       ""
     ])
-
     return {
       msg_type: 2,
       msg_id: session.messageId,
@@ -307,16 +306,15 @@ export async function apply(ctx: Context, config: Config) {
   })
   deleteOldFiles(root)
 
-  let width = 0
-  let height = 0
   async function getImageSizeAndLog(imageUrl: string, num: number, color: string, blurs: number, avaurl) {
     try {
       const image = await ctx.canvas.loadImage(imageUrl);
       let wid = config.draw_modle == "canvas" ? 'width' : 'naturalWidth'
       let hei = config.draw_modle == "canvas" ? 'height' : 'naturalHeight'
+      let width = 0
+      let height = 0
       width = image[wid]
       height = image[hei]
-
       //进行横竖判断
       var type: boolean = false
       if (height >= width) {
@@ -584,8 +582,16 @@ export async function apply(ctx: Context, config: Config) {
     }
   }
 
-  function calculateHash(buffer: Buffer): string {
-    // 每次调用函数时都创建一个新的哈希对象
+  function calculateHash(input) {
+    let buffer
+    if (typeof input === 'string') {
+      buffer = Buffer.from(input, 'base64');
+    }
+    else if (input instanceof ArrayBuffer) {
+      buffer = Buffer.from(input);
+    } else {
+      buffer = input
+    }
     const hash = crypto.createHash('sha256');
     hash.update(buffer);
     return hash.digest('hex');
@@ -716,7 +722,12 @@ export async function apply(ctx: Context, config: Config) {
             await img_save(Buffer.from(img), root, hash + '.jpg')
             const url = await img_to_channel(imgBuff, session.bot.config.id, session.bot.config.secret, qqguild_id)
             console.log(url)
-            const md_mess = markdown(session, hash, width, height, url)
+            const image = await ctx.canvas.loadImage(imgBuff);
+            let widt = config.draw_modle == "canvas" ? 'width' : 'naturalWidth'
+            let heit = config.draw_modle == "canvas" ? 'height' : 'naturalHeight'
+            let wid = image[widt]
+            let hei = image[heit]
+            const md_mess = markdown(session, hash, wid, hei, url)
             try {
               await session.qq.sendMessage(session.channelId, md_mess)
             } catch (e) {
@@ -756,7 +767,6 @@ ${hash}
             } else {
               return
             }
-
           }
         } catch (e) {
           logger.info(e)
@@ -768,9 +778,14 @@ ${hash}
         }
       }
     });
+
+    
   ctx.command("原图 <img_hash>")
     .alias("背景图")
     .action(async (_, img_hash) => {
+      if (!img_hash) {
+        return
+      }
       const imgdata = h.parse(img_hash)
       console.log(imgdata)
       if (imgdata[0].type == "img") {
