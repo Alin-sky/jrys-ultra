@@ -39,7 +39,7 @@ export const Config: Schema<Config> = Schema.intersect([
       Schema.const('强获取').description('强获取'),
     ]).description('背景图获取方法').role('radio').required(),
     hash: Schema.boolean().default(true).description('同时返回图片hash，用于背景图强获取'),
-    font: Schema.string().default('YouYuan').description('字体设置(使用系统自带字体，填写系统自带字体的[英文名](https://www.cnblogs.com/chendc/p/9298832.html)，只研究了win系统)'),
+    font: Schema.string().default('YouYuan').description('字体设置'),
     url: Schema.string().required().description('填入url或完整本地文件夹路径'),
     blurs: Schema.number().role('slider').min(0).max(100).step(1).default(50).description('透明度'),
     color: Schema.string().required().role('color').description('模糊框背景色'),
@@ -63,17 +63,20 @@ export const usage = `
 # koishi-plugin-jrys-ultra
 ## 运势文案和算法借(chao)鉴(xi)了[jryspro](https://github.com/Twiyin0/koishi-plugin-jryspro/tree/main),感谢大佬
 ---
-### 获取背景图方式介绍
+### 🟢获取背景图方式介绍
 - #### 回复获取
   - 指令调用者在160秒内发送“原图”获取
   - 🔵优点：不占用本地存储
   - 🟠缺点：可能会占用一部分内存，并且超时和非指令调用者都无法获取
 - #### 强获取
   - 通过使用指令"原图"，传入背景图原图或图片hash值获取
-  - 系统会自动删除本地文件夹内三天前的数据（beta）
+  - 系统会自动删除本地文件夹内两天前的数据（beta）
   - 🔵优点：任何人均可获取，且不限制时间
   - 🟠缺点：手机端发送图文图片较为麻烦，并且背景图会占用本地存储（data/jrys_img）
 
+### 🟢字体设置(使用系统自带字体，填写系统自带字体的[英文名](https://www.cnblogs.com/chendc/p/9298832.html)，只研究了win系统
+
+官方bot适配可提[issue](https://github.com/Alin-sky/jrys-ultra/issues)
 ---
 `
 
@@ -103,7 +106,6 @@ export async function apply(ctx: Context, config: Config) {
     logger.info("⚠️ md相关设置未完善,未启用MD模板")
     mdswitch = false
   }
-
   function getyunshi_text(num: number) {
     return {
       jrys: jrysJson[num],
@@ -155,13 +157,6 @@ export async function apply(ctx: Context, config: Config) {
   }
 
   function markdown(session, hash, width, height, url) {
-    let t2text = ''
-    t2text = random.pick([
-      '0-10点的为高峰期，爱丽丝可能会回复不过来😿',
-      "😽😽😽",
-      "😺😺😺",
-      ""
-    ])
     return {
       msg_type: 2,
       msg_id: session.messageId,
@@ -174,7 +169,7 @@ export async function apply(ctx: Context, config: Config) {
           },
           {
             key: mdkey2,
-            values: [' '],
+            values: ['✨✨✨'],
           },
           {
             key: mdkey3,
@@ -224,27 +219,52 @@ export async function apply(ctx: Context, config: Config) {
       * @param secret - 机器人Secret
       * @param channelId - 频道ID
       */
+  let bot = {
+    appId: '',
+    secret: '',
+    channelId: "",
+  };
+  let bot_tok = {
+    token: '',
+    expiresIn: 31
+  }
+  async function refreshToken(bot) {
+    const { access_token: accessToken, expires_in: expiresIn } = await ctx.http.post('https://bots.qq.com/app/getAppAccessToken', {
+      appId: bot.appId,
+      clientSecret: bot.secret
+    });
+    bot_tok.token = accessToken;
+    bot_tok.expiresIn = expiresIn
+  }
+  ctx.setTimeout(async () => await refreshToken(bot), (bot_tok.expiresIn - 30) * 1000);
   async function img_to_channel(data: Buffer, appId, secret, channelId) {
-    async function refreshToken(bot) {
-      const { access_token: accessToken, expires_in: expiresIn } = await ctx.http.post('https://bots.qq.com/app/getAppAccessToken', {
-        appId: bot.appId,
-        clientSecret: bot.secret
-      });
-      bot.token = accessToken;
-      await ctx.setTimeout(() => refreshToken(bot), (expiresIn - 30) * 1000);
-    }
-    const bot = { appId, secret, channelId };
-    // 刷新令牌
-    await refreshToken(bot);
+    bot = {
+      appId: appId,
+      secret: secret,
+      channelId: channelId
+    };
     const payload = new FormData();
     payload.append('msg_id', '0');
+    //`QQBot ${bot['token']}`,
     payload.append('file_image', new Blob([data], { type: 'image/png' }), 'image.jpg');
-    await ctx.http.post(`https://api.sgroup.qq.com/channels/${bot.channelId}/messages`, payload, {
-      headers: {
-        Authorization: `QQBot ${bot['token']}`,
-        'X-Union-Appid': bot.appId
-      }
-    });
+    try {
+      console.log("旧token")
+      await ctx.http.post(`https://api.sgroup.qq.com/channels/${bot.channelId}/messages`, payload, {
+        headers: {
+          Authorization: `QQBot ${bot_tok.token}`,
+          'X-Union-Appid': bot.appId
+        }
+      });
+    } catch (e) {
+      console.log("创建token")
+      await refreshToken(bot);
+      await ctx.http.post(`https://api.sgroup.qq.com/channels/${bot.channelId}/messages`, payload, {
+        headers: {
+          Authorization: `QQBot ${bot_tok.token}`,
+          'X-Union-Appid': bot.appId
+        }
+      });
+    }
     // 计算MD5并返回图片URL
     const md5 = crypto.createHash('md5').update(data).digest('hex').toUpperCase();
     return `https://gchat.qpic.cn/qmeetpic/0/0-0-${md5}/0`
@@ -288,7 +308,7 @@ export async function apply(ctx: Context, config: Config) {
           if (err) throw err;
 
           const now = new Date().getTime();
-          const endTime = new Date(stats.mtime).getTime() + 3 * 24 * 60 * 60 * 1000; // 文件修改时间 + 3天
+          const endTime = new Date(stats.mtime).getTime() + 2 * 24 * 60 * 60 * 1000; // 文件修改时间 + 2天
           // 如果文件是三天前的，则删除
           if (now > endTime) {
             unlink(filePath, err => {
@@ -330,7 +350,7 @@ export async function apply(ctx: Context, config: Config) {
         } else { width = width / y; height = height / y }
       }
       const canvass = await ctx.canvas.createCanvas(width, height)
-      const ctximg = canvass.getContext('2d')
+      const ctximg = canvass.getContext("2d")
       ctximg.drawImage(image, 0, 0, width, height);
 
       // 在画布的左上角画一个圆角矩形
@@ -592,14 +612,22 @@ export async function apply(ctx: Context, config: Config) {
     } else {
       buffer = input
     }
-    const hash = crypto.createHash('sha256');
+    const hash = crypto.createHash('md5');
     hash.update(buffer);
     return hash.digest('hex');
   }
 
+  let get_backimg_text = ''
+  if (config.background_image == "回复获取") {
+    get_backimg_text = '在两分钟内@机器人并发送‘原图’，即可获取背景图片'
+  } else if (config.background_image == "强获取") {
+    get_backimg_text = '通过使用指令"原图"，传入背景图原图或图片hash值可获取背景图'
+  } else {
+    get_backimg_text = ''
+  }
   ctx.command('jrysultra [red] [green] [blue] [alpha] [blurs]', '输出当日运势图片')
     .alias('每日运势')
-    .usage('可传入文字框的颜色和透明度(透明度最高100)\n 在两分钟内@机器人并发送‘原图’，即可获取背景图片')
+    .usage('可传入文字框的颜色和透明度(透明度最高100)\n' + get_backimg_text)
     .example('jrysultra 102 204 255 0.6 40  【rgba的四个值和模糊度】')
     .option('text', '-t 文字输出')
     .action(async ({ options, session }, red, green, blue, alpha, blurs) => {
@@ -687,7 +715,7 @@ export async function apply(ctx: Context, config: Config) {
           }
         }
         // 这个索引是根据当前日期的零点时间戳（秒）和用户 ID 的和乘以一个常数，然后对运势数组的长度加一取模得到的
-        var todayJrys = ((etime / 1000 + userId) * 2333) % (jrysJson.length + 1);
+        var todayJrys = ((etime / 1000 + userId) * 2333) % (jrysJson.length);
         todayJrys = todayJrys % 80;
         // 返回对应索引的运势
         return Number(todayJrys);
@@ -718,7 +746,6 @@ export async function apply(ctx: Context, config: Config) {
           if (mdswitch && session.event.platform == 'qq') {
             const hash = calculateHash(imgBuff);
             // 计算哈希值，输出为十六进制字符串
-            console.log(hash)
             await img_save(Buffer.from(img), root, hash + '.jpg')
             const url = await img_to_channel(imgBuff, session.bot.config.id, session.bot.config.secret, qqguild_id)
             console.log(url)
@@ -779,7 +806,6 @@ ${hash}
       }
     });
 
-    
   ctx.command("原图 <img_hash>")
     .alias("背景图")
     .action(async (_, img_hash) => {
