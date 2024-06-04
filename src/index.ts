@@ -22,6 +22,8 @@ export interface Config {
   draw_modle: "canvas" | "puppeteer"
   background_image: "禁用" | "回复获取" | "强获取"
   hash: boolean
+  maxwid: number
+  maxhei: number
   markdown_setting: {
     table: any
     qqguild: string
@@ -42,6 +44,8 @@ export const Config: Schema<Config> = Schema.intersect([
     font: Schema.string().default('YouYuan').description('字体设置'),
     url: Schema.string().required().description('填入url或完整本地文件夹路径'),
     blurs: Schema.number().role('slider').min(0).max(100).step(1).default(50).description('透明度'),
+    maxhei: Schema.number().role('slider').min(240).max(7680).step(50).default(1440).description('高度'),
+    maxwid: Schema.number().role('slider').min(240).max(7680).step(50).default(2560).description('宽度'),
     color: Schema.string().required().role('color').description('模糊框背景色'),
   }).description('基础配置'),
   Schema.object({
@@ -76,7 +80,7 @@ export const usage = `
 
 ### 🟢字体设置(使用系统自带字体，填写系统自带字体的[英文名](https://www.cnblogs.com/chendc/p/9298832.html)，只研究了win系统
 
-官方bot适配可提[issue](https://github.com/Alin-sky/jrys-ultra/issues)
+qq官方bot适配可提[issue](https://github.com/Alin-sky/jrys-ultra/issues)
 ---
 `
 
@@ -212,6 +216,7 @@ export async function apply(ctx: Context, config: Config) {
     }
   }
 
+
   /**
       * 刷新机器人的令牌并上传图片到指定频道,抄的上学的，上学抄的22的（）
       * @param data - 图片数据或者文件路径(buffer)
@@ -246,7 +251,7 @@ export async function apply(ctx: Context, config: Config) {
     const payload = new FormData();
     payload.append('msg_id', '0');
     //`QQBot ${bot['token']}`,
-    payload.append('file_image', new Blob([data], { type: 'image/png' }), 'image.jpg');
+    payload.append('file_image', new Blob([data], { type: 'image/jpg' }), 'image.jpg');
     try {
       console.log("旧token")
       await ctx.http.post(`https://api.sgroup.qq.com/channels/${bot.channelId}/messages`, payload, {
@@ -342,9 +347,11 @@ export async function apply(ctx: Context, config: Config) {
       } else { type = false }
       const type2 = random.bool(0.5)
       //进行尺寸限制
-      if (width > 2560 || height > 1440) {
-        const x = width / 2560
-        const y = height / 1440
+      const maxhei = config.maxhei
+      const maxwid = config.maxwid
+      if (width > maxhei || height > maxwid) {
+        const x = width / maxhei
+        const y = height / maxwid
         if (x > y) {
           height = height / x; width = width / x
         } else { width = width / y; height = height / y }
@@ -353,6 +360,7 @@ export async function apply(ctx: Context, config: Config) {
       const ctximg = canvass.getContext("2d")
       ctximg.drawImage(image, 0, 0, width, height);
 
+      ctximg.imageSmoothingEnabled = true//抗锯齿
       // 在画布的左上角画一个圆角矩形
       var size_type = {
         rw: 1,
@@ -617,6 +625,13 @@ export async function apply(ctx: Context, config: Config) {
     return hash.digest('hex');
   }
 
+  function calculate_picid_b64(picid) {
+    const timestampStr = picid.toString();
+    // 将字符串编码为Base64
+    const encodedTimestamp = Buffer.from(timestampStr).toString('base64')
+    return encodedTimestamp;
+  }
+
   let get_backimg_text = ''
   if (config.background_image == "回复获取") {
     get_backimg_text = '在两分钟内@机器人并发送‘原图’，即可获取背景图片'
@@ -625,6 +640,7 @@ export async function apply(ctx: Context, config: Config) {
   } else {
     get_backimg_text = ''
   }
+
   ctx.command('jrysultra [red] [green] [blue] [alpha] [blurs]', '输出当日运势图片')
     .alias('每日运势')
     .usage('可传入文字框的颜色和透明度(透明度最高100)\n' + get_backimg_text)
@@ -744,17 +760,21 @@ export async function apply(ctx: Context, config: Config) {
           }
           const imgBuff = await getImageSizeAndLog(img, getJrys(session), art[0].toString(), Number(art[1]), ava_url);
           if (mdswitch && session.event.platform == 'qq') {
-            const hash = calculateHash(imgBuff);
-            // 计算哈希值，输出为十六进制字符串
-            await img_save(Buffer.from(img), root, hash + '.jpg')
-            const url = await img_to_channel(imgBuff, session.bot.config.id, session.bot.config.secret, qqguild_id)
-            console.log(url)
+            img = ''
+            //对于开启md模板的qq官方bot的专码专用（悲）
+            const rannum = random.int(1000000, 1016161)
+            img = await ctx.http.get(`${url}/?picid=${rannum}`)
+            // 计算哈希值
+            const hash = calculate_picid_b64(rannum);
+            const imgBuff = await getImageSizeAndLog(img, getJrys(session), art[0].toString(), Number(art[1]), ava_url);
+            const mdurl = await img_to_channel(imgBuff, session.bot.config.id, session.bot.config.secret, qqguild_id)
+            console.log(mdurl)
             const image = await ctx.canvas.loadImage(imgBuff);
             let widt = config.draw_modle == "canvas" ? 'width' : 'naturalWidth'
             let heit = config.draw_modle == "canvas" ? 'height' : 'naturalHeight'
             let wid = image[widt]
             let hei = image[heit]
-            const md_mess = markdown(session, hash, wid, hei, url)
+            const md_mess = markdown(session, hash, wid, hei, mdurl)
             try {
               await session.qq.sendMessage(session.channelId, md_mess)
             } catch (e) {
@@ -771,16 +791,17 @@ export async function apply(ctx: Context, config: Config) {
             const name = await session.prompt(160000)
             if (!name) return
             if (name == '原图') {
-              session.send(h.image(img, 'image/jpg'))
-              img = ''
+              await session.send(h.image(img, 'image/jpg'))
+              //img = ''
               return
             } else if (name == 'jrys' || name == '今日运势') {
-              img = ''
+              //img = ''
               return session.execute('jrysultra')
             } else {
-              img = ''
+              //img = ''
               return
             }
+
           } else if (config.background_image == "强获取") {
             const hash = calculateHash(imgBuff);
             console.log(hash)
@@ -808,7 +829,7 @@ ${hash}
 
   ctx.command("原图 <img_hash>")
     .alias("背景图")
-    .action(async (_, img_hash) => {
+    .action(async ({ session }, img_hash) => {
       if (!img_hash) {
         return
       }
@@ -823,11 +844,16 @@ ${hash}
           return "呜呜，获取原图出错了"
         }
       } else if (imgdata[0].type == "text") {
-        try {
-          return h.image(pathToFileURL(`${root}/${img_hash}.jpg`).href)
-        } catch (e) {
-          logger.info(e)
-          return "呜呜，获取原图出错了"
+        if (mdswitch && session.event.platform == 'qq') {
+          const decodedStr = Buffer.from(img_hash, 'base64').toString()
+          return h.image(`${url}/?picid=${decodedStr}`)
+        } else {
+          try {
+            return h.image(pathToFileURL(`${root}/${img_hash}.jpg`).href)
+          } catch (e) {
+            logger.info(e)
+            return "呜呜，获取原图出错了"
+          }
         }
       } else {
         return "呜呜，获取原图出错了"
